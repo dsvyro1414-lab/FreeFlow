@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Full Xcode verification
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Confirm an exact tag checkout
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          test "$(git describe --tags --exact-match)" = "$GITHUB_REF_NAME"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Confirm full Xcode toolchain
+        run: |
+          set -euo pipefail
+          developer_dir="$(xcode-select -p)"
+          if [[ "$developer_dir" == *CommandLineTools* ]]; then
+            echo "CI requires a full Xcode installation, not Command Line Tools." >&2
+            exit 1
+          fi
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
+
+      - name: Lint Swift
+        run: swift format lint --strict --recursive Sources Tests Package.swift script/package_icns.swift
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Compile both macOS architectures
+        run: |
+          set -euo pipefail
+          swift build --configuration release \
+            --triple arm64-apple-macosx14.0 \
+            --product FreeFlow \
+            --scratch-path .build/ci-arm64
+          swift build --configuration release \
+            --triple x86_64-apple-macosx14.0 \
+            --product FreeFlow \
+            --scratch-path .build/ci-x86_64
+          echo "Both targets compiled. This is not an Intel runtime test."
+
+      - name: Build the host-native release bundle
+        run: ./script/build_and_run.sh --build-release
+
+      - name: Verify bundle, signature, permissions metadata, and licenses
+        run: |
+          set -euo pipefail
+          app="dist/FreeFlow.app"
+          test -d "$app"
+          codesign --verify --deep --strict "$app"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "com.dsvyro.freeflow"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")" = "14.0"
+          test -s "$app/Contents/Resources/LICENSE"
+          test -s "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+          test -s "$app/Contents/Resources/FreeFlow.icns"
+          cmp -s LICENSE "$app/Contents/Resources/LICENSE"
+          cmp -s THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+          cmp -s Resources/FreeFlow.icns "$app/Contents/Resources/FreeFlow.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" = "FreeFlow.icns"
+          icon_verify_root="$(mktemp -d)"
+          iconutil -c iconset "$app/Contents/Resources/FreeFlow.icns" \
+            -o "$icon_verify_root/FreeFlow.iconset"
+          test -s "$icon_verify_root/FreeFlow.iconset/icon_512x512@2x.png"
+          host_arch="$(uname -m)"
+          lipo "$app/Contents/MacOS/FreeFlow" -verify_arch "$host_arch"
+          lipo "$app/Contents/Frameworks/whisper.framework/whisper" -verify_arch "$host_arch"
+          signature_details="$(codesign -dvv "$app" 2>&1)"
+          grep 'flags=.*runtime' <<<"$signature_details" >/dev/null
+          audio_input_entitlement="$(
+            codesign -d --entitlements :- "$app" 2>/dev/null \
+              | plutil -extract 'com\.apple\.security\.device\.audio-input' raw -
+          )"
+          test "$audio_input_entitlement" = "true"
+          library_validation_entitlement="$(
+            codesign -d --entitlements :- "$app" 2>/dev/null \
+              | plutil -extract 'com\.apple\.security\.cs\.disable-library-validation' raw -
+          )"
+          test "$library_validation_entitlement" = "true"
+
+      - name: Reject bundled models and common secrets
+        run: |
+          set -euo pipefail
+          bundled_private_artifact="$(
+            find dist/FreeFlow.app \
+              \( -name '*.bin' -o -name '*.mlmodelc' -o -name '*.mlpackage' \
+                 -o -name '*.wav' -o -name '*.m4a' \) -print -quit
+          )"
+          if [[ -n "$bundled_private_artifact" ]]; then
+            echo "Release bundle contains a model or recording artifact." >&2
+            exit 1
+          fi
+
+          secret_pattern='(sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9_-]{20,}|xai-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)'
+          if git grep -I -n -E "$secret_pattern" -- . \
+            ':!.github/workflows/ci.yml'; then
+            echo "A common secret pattern is present in tracked content." >&2
+            exit 1
+          fi
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+  macos14-compatibility:
+    name: macOS 14 / Swift 6 source install
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Confirm an exact tag checkout
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          test "$(git describe --tags --exact-match)" = "$GITHUB_REF_NAME"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Confirm macOS 14 and Swift 6
+        run: |
+          set -euo pipefail
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "14"
+          xcodebuild -version
+          swift --version
+          swift --version | grep 'Apple Swift version 6\.' >/dev/null
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Install from source without launching
+        run: |
+          set -euo pipefail
+          ./script/build_and_run.sh --install
+          app="$HOME/Applications/FreeFlow.app"
+          test -d "$app"
+          codesign --verify --deep --strict "$app"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "com.dsvyro.freeflow"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")" = "14.0"
+          host_arch="$(uname -m)"
+          lipo "$app/Contents/MacOS/FreeFlow" -verify_arch "$host_arch"
+          lipo "$app/Contents/Frameworks/whisper.framework/whisper" -verify_arch "$host_arch"
+          test -s "$app/Contents/Resources/LICENSE"
+          test -s "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+          if [[ -e "dist/FreeFlow.app" || -L "dist/FreeFlow.app" ]]; then
+            echo "The source installer left a duplicate staged app bundle." >&2
+            exit 1
+          fi
+          if pgrep -x FreeFlow >/dev/null; then
+            echo "The source installer launched FreeFlow unexpectedly." >&2
+            exit 1
+          fi
+          echo "macOS 14 source installation passed for $host_arch."

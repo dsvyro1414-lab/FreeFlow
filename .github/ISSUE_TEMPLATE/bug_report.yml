@@ -1,0 +1,116 @@
+name: Bug report
+description: Report a reproducible FreeFlow problem without private dictation data.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FreeFlow is a source-only alpha. Remove dictated text, recordings, API
+        keys, tokens, and private file paths. Use the private security process
+        for vulnerabilities.
+
+  - type: input
+    id: commit
+    attributes:
+      label: Source commit
+      description: Output of `git rev-parse HEAD` from the checkout used to build the app.
+      placeholder: 40-character commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: 14.7.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac architecture
+      options:
+        - Apple Silicon (physically tested path)
+        - Intel (experimental and not physically verified by the project)
+        - Unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Transcription mode
+      options:
+        - Parakeet local
+        - Whisper local
+        - OpenAI API
+        - xAI (Grok) Speech-to-Text
+        - Groq Whisper API
+        - Not reached / unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Build and install path
+      options:
+        - script/build_and_run.sh --install
+        - script/build_and_run.sh --build-release (dist bundle)
+        - Debug/source run
+        - Other source build
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions at reproduction time
+      options:
+        - label: Microphone was granted
+        - label: Accessibility was granted
+        - label: I reproduced with a custom chord and clipboard-only output
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic words and redact private application/file names.
+      placeholder: |
+        1. Launch the installed source build
+        2. Select ...
+        3. Hold ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Minimal redacted diagnostics
+      description: Do not attach audio, full logs, API keys, Keychain output, or dictated content.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed secrets, recordings, dictated text, and other private data.
+          required: true
+        - label: This is not a security vulnerability requiring private disclosure.
+          required: true

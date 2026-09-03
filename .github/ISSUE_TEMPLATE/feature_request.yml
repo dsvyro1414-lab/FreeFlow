@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a focused improvement that preserves FreeFlow's privacy boundaries.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FreeFlow is currently an English-first, source-only macOS alpha. Please
+        describe the user problem before proposing an implementation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What is difficult today, and for whom?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior, not only a library or architecture choice.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data
+    attributes:
+      label: Data path
+      options:
+        - Fully local
+        - Optional cloud mode
+        - No audio/text data involved
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Permissions and privacy impact
+      description: Note any new permission, network request, retention, or secret handling.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Product boundaries
+      options:
+        - label: The request does not require copying another product's code or branding.
+          required: true
+        - label: The request preserves transcripts on failure through a clear fallback.
+          required: true

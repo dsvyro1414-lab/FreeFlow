@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/dsvyro1414-lab/FreeFlow/security/advisories/new
+    about: Report vulnerabilities privately; never post secrets or real dictation publicly.
+  - name: Source installation guide
+    url: https://github.com/dsvyro1414-lab/FreeFlow/blob/main/INSTALL.md
+    about: Read the manual flow and exact safe coding-agent prompt before filing an install issue.
